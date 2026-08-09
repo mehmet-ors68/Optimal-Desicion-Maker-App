@@ -263,7 +263,8 @@ module.exports = {
   doesUsernameExist,
   doesEmailExist,
   createNewUser,
-  getUserByUsername
+  getUserByUsername,
+  initializeDatabase
 };
 
 
@@ -312,7 +313,6 @@ CREATE TABLE decisionmatrix (
   FOREIGN KEY ("caseId") REFERENCES cases("caseId") ON DELETE CASCADE
 );
 */
-/*
 async function initializeDatabase() {
   try {
     await pool.query(`
@@ -364,5 +364,3 @@ async function initializeDatabase() {
     console.error('❌ Error initializing database:', err);
   }
 }
-
-*/

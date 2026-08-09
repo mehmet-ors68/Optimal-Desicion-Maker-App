@@ -3,44 +3,22 @@ const { Pool } = require("pg");
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 
 
-/*
-DATABASE_USER=postgres
-DATABASE_HOST=localhost
-DATABASE_SERVER=MCDM
-DATABASE_PASSWORD=password
-DATABASE_PORT=5432
+// Connection details come from .env only — see .env.example for the shape.
+// Never paste a real connection string into this file: it is tracked by git.
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL is not set. Copy .env.example to .env and fill it in.");
+}
 
-PORT=5000
-DATABASE_URL=postgresql://optimal_desicion_maker_app_db_user:AKCSbKbbujo6Nazoby5oTT2cafasHWVc@dpg-cvap65ij1k6c738vkaf0-a.frankfurt-postgres.render.com/optimal_desicion_maker_app_db
-*/
-/*
-// for local dev
-const pool = new Pool({
-  user: process.env.DATABASE_USER,
-  host: process.env.DATABASE_HOST,
-  database: process.env.DATABASE_SERVER,
-  password: process.env.DATABASE_PASSWORD,
-  port: process.env.DATABASE_PORT,
-  max: 10, // Maximum number of clients in the pool
-  idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-});
-*/
-//for deploy!!!
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, // The full connection URL
-  ssl: { rejectUnauthorized: false} // Bunu "require" olarak tut
+const isLocal = process.env.DATABASE_URL.includes("localhost");
 
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  // Render's managed Postgres terminates TLS with a cert this client can't chain,
+  // so verification is off there. A local database needs no TLS at all.
+  ssl: isLocal ? false : { rejectUnauthorized: false },
+  max: 10,
+  idleTimeoutMillis: 30000,
 });
-//test by fetching time
-/*
-pool.query('SELECT NOW()', (err, res) => {
-  if (err) {
-    console.error('Error executing query', err.stack);
-  } else {
-    console.log('Database time: ', res.rows[0]);
-  }
-});
-*/
 
 
 // Log successful connection

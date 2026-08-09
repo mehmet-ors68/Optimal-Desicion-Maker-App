@@ -51,19 +51,32 @@ router.post("/login", async (req, res) => {
 router.post("/register", async (req, res) => {
     const { username, password, email } = req.body;
 
+    if (!username || !password || !email) {
+        return res.status(400).json({ message: "username, password and email are required" });
+    }
+
     try {
-        // Step 1: Check if username or email already exists
-        if (await doesUsernameExist())
+        // Step 1: Check if username or email already exists.
+        // These were previously called with no arguments, so the check always
+        // passed and the duplicate only failed later on the UNIQUE constraint.
+        if (await doesUsernameExist(username))
             return res.status(409).json({ usernameExists: true });
 
-        if (await doesEmailExist())
+        if (await doesEmailExist(email))
             return res.status(409).json({ existingEmail: true });
 
         // Step 2: Hash the password
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(password, saltRounds);
-        // Step 3: Insert new user into DB
+
+        // Step 3: Insert new user into DB and read back the row we just created.
+        // The JWT below needs the generated userId, which only the insert knows.
         await createNewUser(username, hashedPassword, email);
+        const user = await getUserByUsername(username);
+
+        if (!user) {
+            return res.status(500).json({ message: "Could not create user" });
+        }
 
         // Step 4: Generate JWT containing userId
         const token = jwt.sign({ userId: user.userId, username: user.username }, JWT_SECRET, { expiresIn: "1h" });
@@ -76,7 +89,7 @@ router.post("/register", async (req, res) => {
             maxAge: 3600000
         });
 
-        res.json({ message: "Registration successful" });
+        res.status(201).json({ message: "Registration successful" });
     } catch (err) {
         console.error("Registration error:", err);
         res.status(500).json({ message: "Server error" });

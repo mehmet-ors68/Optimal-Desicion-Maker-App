@@ -1,76 +1,67 @@
 const express = require('express');
 const router = express.Router();
-const { getCases, getCasesByUserId, createCase, updateCase, deleteCase } = require('../db/dbFunctions');
-const authenticateUser = require('../middleware/authenticateUser'); // adjust path as needed
+const { getCasesByUserId, createCase, updateCase, deleteCase } = require('../db/dbFunctions');
+const authenticateUser = require('../middleware/authenticateUser');
+const { authorizeCase } = require('../middleware/authorizeCase');
 
+// Every route below requires a valid session.
+router.use(authenticateUser);
 
-router.get("/", authenticateUser, async (req, res) => {
-  const userId = req.userId;
-  const cases = await getCasesByUserId(userId);
-
-  res.json(cases);
+// GET the signed-in user's cases
+router.get('/', async (req, res) => {
+  try {
+    const cases = await getCasesByUserId(req.userId);
+    res.json(cases);
+  } catch (err) {
+    console.error('Error fetching cases:', err);
+    res.status(500).send('Error fetching cases');
+  }
 });
 
-  // GET the cases for a user
-  router.get('/:userId', async (req, res) => {
-    const { userId } = req.params;
-    try {
-      const result = await getCasesByUserId(userId)
-//      const result = await getCaseById(id);
-      if (!result) {
-        return res.status(404).send('Case not found');
-      }
-      res.status(200).json(result);
-    } catch (err) {
-      res.status(500).send('Error fetching case');
-    }
-  });
-  
-  
-  // POST create a new case
-  router.post('/', authenticateUser, async (req, res) => {
-    const { title, description } = req.body;
-    const userId = req.userId; // ✅ Safe and verified
+// POST create a new case
+router.post('/', async (req, res) => {
+  const { title, description } = req.body;
 
-    try {
-      const createdRow = await createCase(userId, title, description);
-      res.status(201).json(createdRow);
-    } catch (err) {
-      console.error('Error creating case:', err);
-      res.status(500).send('Error creating case');
-    }
-  });
+  if (!title || !title.trim()) {
+    return res.status(400).json({ message: 'Title is required' });
+  }
 
-  
-  // PUT update an existing case by ID
-  router.put('/:id', async (req, res) => {
-    const { id } = req.params;
-    const { title, description } = req.body;
-    try {
-      const updatedCase = await updateCase(id, title, description);
-      if (!updatedCase) {
-        return res.status(404).send('Case not found');
-      }
-      res.status(200).json(updatedCase);
-    } catch (err) {
-      res.status(500).send('Error updating case');
-    }
-  });
-  
-  // DELETE a case by ID
-  router.delete('/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-      const deletedCase = await deleteCase(id);
-      if (!deletedCase) {
-        return res.status(404).send('Case not found');
-      }
-      res.status(200).send(`Case with id ${id} deleted`);
-    } catch (err) {
-      res.status(500).send('Error deleting case');
-    }
-  });
+  try {
+    const createdRow = await createCase(req.userId, title, description);
+    res.status(201).json(createdRow);
+  } catch (err) {
+    console.error('Error creating case:', err);
+    res.status(500).send('Error creating case');
+  }
+});
 
-  
+// PUT update a case the user owns
+router.put('/:id', authorizeCase, async (req, res) => {
+  const { title, description } = req.body;
+  try {
+    const updatedCase = await updateCase(req.caseId, title, description);
+    if (!updatedCase) {
+      return res.status(404).send('Case not found');
+    }
+    res.status(200).json(updatedCase);
+  } catch (err) {
+    console.error('Error updating case:', err);
+    res.status(500).send('Error updating case');
+  }
+});
 
-  module.exports = router;
+// DELETE a case the user owns
+router.delete('/:id', authorizeCase, async (req, res) => {
+  try {
+    const deletedCase = await deleteCase(req.caseId);
+    if (!deletedCase) {
+      return res.status(404).send('Case not found');
+    }
+    res.status(200).send(`Case with id ${req.caseId} deleted`);
+  } catch (err) {
+    console.error('Error deleting case:', err);
+    res.status(500).send('Error deleting case');
+  }
+});
+
+module.exports = router;

@@ -1,75 +1,46 @@
 const express = require('express');
 const router = express.Router();
-const { getCriteriasByCaseId, deleteCriteriasByCaseId, insertCriterias, insertCriteria, runQuery } = require('../db/dbFunctions');
+const { getCriteriasByCaseId, insertCriteria, runQuery } = require('../db/dbFunctions');
+const authenticateUser = require('../middleware/authenticateUser');
+const { authorizeCase, authorizeCriteria } = require('../middleware/authorizeCase');
 
-/*
-        criteriaName
-        dataType
-        characteristic
-        criteriaPoint
-*/
-//criterias api calls
-router.get('/:caseId', async (req, res) => {
-  const criterias = await getCriteriasByCaseId(req.params.caseId);
+router.use(authenticateUser);
+
+// GET the criteria of a case the user owns
+router.get('/:caseId', authorizeCase, async (req, res) => {
   try {
+    const criterias = await getCriteriasByCaseId(req.caseId);
     res.status(200).json(criterias);
   } catch (err) {
+    console.error('Error fetching criterias:', err);
     res.status(500).send('Error fetching criterias');
   }
 });
 
-/*
-router.delete('/:caseId', async (req, res) => { 
-  try {
-    console.log("dd")
-    await deleteCriteriasByCaseId(req.params.caseId);
-    res.status(200).send(`Criterias deleted at case with id ${req.params.caseId}`);
-  } catch (err) {
-    console.log("ee is: ", err)
-    res.status(500).send(`Error deleting criterias: ${err.detail}`);
+// POST add a criterion to a case the user owns.
+// authorizeCase already proved the case exists and belongs to them.
+router.post('/:caseId', authorizeCase, async (req, res) => {
+  const { criteriaName } = req.body;
+
+  if (!criteriaName || !criteriaName.trim()) {
+    return res.status(400).json({ message: 'criteriaName is required' });
   }
-});
 
-router.post('/:caseId', async (req, res) => {
   try {
-    // 1️⃣ Check if the case exists
-    const caseCheckResult = await runQuery(`SELECT * FROM cases WHERE "caseId" = $1`, [req.params.caseId]);
-    
-    if (!caseCheckResult.rowCount) {
-      return res.status(404).send('Case not found');
-    }
-    await insertCriterias(req.params.caseId, req.body);
-    res.status(201).send('Criterias added');
-  } catch (err) {
-    res.status(500).send({"error is: ": err});
-  }
-});
-
-*/
-
-router.post('/:caseId', async (req, res) => {
-  try {
-    // 1️⃣ Check if the case exists
-    const caseCheckResult = await runQuery(`SELECT * FROM cases WHERE "caseId" = $1`, [req.params.caseId]);
-    
-    if (!caseCheckResult.rowCount) {
-      return res.status(404).send('Case not found');
-    }
-    const criteriaId = await insertCriteria(req.params.caseId, req.body);
-    
+    const criteriaId = await insertCriteria(req.caseId, req.body);
     res.status(201).json(criteriaId);
   } catch (err) {
-    res.status(500).send({"error is: ": err});
+    console.error('Error inserting criteria:', err);
+    res.status(500).json({ message: 'Error inserting criteria' });
   }
 });
 
-
-router.put('/:criteriaId', async (req, res) => {
+// PUT update a criterion belonging to one of the user's cases
+router.put('/:criteriaId', authorizeCriteria, async (req, res) => {
   const { criteriaId } = req.params;
   const { criteriaName, dataType, characteristic, criteriaPoint } = req.body;
 
   try {
-    // Optional: Verify the case and criteria exist
     const result = await runQuery(
       `UPDATE criterias
        SET "criteriaName" = $1,
@@ -81,34 +52,45 @@ router.put('/:criteriaId', async (req, res) => {
     );
 
     if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Criteria not found or no changes made." });
+      return res.status(404).json({ error: 'Criteria not found or no changes made.' });
     }
 
-    res.status(200).json({ message: "Criteria updated successfully." });
+    res.status(200).json({ message: 'Criteria updated successfully.' });
   } catch (err) {
-    console.error("Error updating criteria:", err);
-    res.status(500).json({ error: "Internal server error." });
+    console.error('Error updating criteria:', err);
+    res.status(500).json({ error: 'Internal server error.' });
   }
 });
 
-router.delete('/:criteriaId', async (req, res) => {
+// DELETE a criterion belonging to one of the user's cases
+router.delete('/:criteriaId', authorizeCriteria, async (req, res) => {
   const { criteriaId } = req.params;
-  const criteriaName = req.body.criteriaName;
+  const { criteriaName } = req.body;
 
   try {
-    const result = await runQuery(`DELETE FROM criterias WHERE "criteriaId" = $1`, [criteriaId]);
-    await runQuery(`DELETE FROM decisionmatrix WHERE "criteriaName" = $1`, [criteriaName]);
+    const result = await runQuery(
+      'DELETE FROM criterias WHERE "criteriaId" = $1',
+      [criteriaId]
+    );
+
     if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Criteria not found." });
+      return res.status(404).json({ error: 'Criteria not found.' });
     }
 
-    res.status(200).json({ message: "Criteria deleted successfully." });
+    // Scope the matrix cleanup to this case. Deleting by criteriaName alone
+    // would wipe rows out of every other case that happens to reuse the name.
+    if (criteriaName) {
+      await runQuery(
+        'DELETE FROM decisionmatrix WHERE "criteriaName" = $1 AND "caseId" = $2',
+        [criteriaName, req.caseId]
+      );
+    }
+
+    res.status(200).json({ message: 'Criteria deleted successfully.' });
   } catch (err) {
-    console.error("Error deleting criteria:", err);
-    res.status(500).json({ error: "Internal server error." });
+    console.error('Error deleting criteria:', err);
+    res.status(500).json({ error: 'Internal server error.' });
   }
 });
 
-
-
-  module.exports = router;
+module.exports = router;
